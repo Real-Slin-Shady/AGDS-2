@@ -56,25 +56,7 @@ phenocamr::download_phenocam(
   out_dir = tempdir()
 )
 
-bartel_phenocam_data <- readr::read_csv(
-  file.path(tempdir(), "bartlettir_DB_1000_3day_transition_dates.csv"),
-  comment = "#"
-)
 
-# reading in harvard phenology only retaining
-# spring (rising) phenology for the GCC 90th
-# percentile time series (the default)
-bartel_phenology <- readr::read_csv(
-  file.path(
-    tempdir(),
-    "bartlettir_DB_1000_3day_transition_dates.csv"
-  ),
-  comment = "#"
-) |>
-  dplyr::filter(
-    direction == "rising",
-    gcc_value == "gcc_90"
-  )
 
 ```
 Now also respect solar radiation
@@ -99,24 +81,6 @@ harvard_temp <- harvard_phenocam_data |>
   dplyr::ungroup()
 
 
-bartel_temp <- bartel_phenocam_data |>
-  mutate(year = year(transition_10))|>
-  group_by(year) |>
-  dplyr::mutate(
-    tmean = (tmax..deg.c. + tmin..deg.c.)/2
-  ) |>
-  dplyr::mutate(
-    date = as.Date(date),
-    gdd = cumsum(ifelse(tmean >= 5, tmean - 5, 0))
-  ) |>
-  dplyr::select(
-    date,
-    year,
-    tmean,
-    gdd,
-    srad..W.m.2.
-  ) |>
-  dplyr::ungroup()
 
 ```
 

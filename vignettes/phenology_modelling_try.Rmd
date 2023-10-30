@@ -5,16 +5,20 @@ date: "`r Sys.Date()`"
 output: html_document
 ---
 
-Ways to improve spatial scaling of model:
-1) Respect plant species
-2) Choose data from local site
+This excercise builds upon the model presented in "https://geco-bern.github.io/handfull_of_pixels/phenology_modelling.html". The first task is to think of ways to improve the model. The following are ideas that I came up with.
+
+1) Add more training data
+2) Add information about plant species
 3) Use more parameters for model
 
---> 3 one is chosen
+--> 1+3 one is chosen to implement
+
 ```{r}
-library(phenocamr)
-library(dplyr)
-library(ggplot2)
+packages <- c("phenocamr","dplyr","ggplot2","lubridate","daymetr","leaflet","terra","MODISTools")
+
+source("../R/load_packages.R")
+load_packages(packages)
+
 phenocamr::download_phenocam(
   site = "harvard$",
   veg_type = "DB",
@@ -45,7 +49,7 @@ harvard_phenology <- readr::read_csv(
     gcc_value == "gcc_90"
   )
 
-
+#Now we also load data from the bartlettir site.
 phenocamr::download_phenocam(
   site = "bartlettir$",
   veg_type = "DB",
@@ -57,13 +61,11 @@ phenocamr::download_phenocam(
 )
 
 bartel_phenocam_data <- readr::read_csv(
-  file.path(tempdir(), "bartlettir_DB_1000_3day_transition_dates.csv"),
+  file.path(tempdir(), "bartlettir_DB_1000_3day.csv"),
   comment = "#"
 )
 
-# reading in harvard phenology only retaining
-# spring (rising) phenology for the GCC 90th
-# percentile time series (the default)
+#we apply the same processing
 bartel_phenology <- readr::read_csv(
   file.path(
     tempdir(),
@@ -80,6 +82,7 @@ bartel_phenology <- readr::read_csv(
 Now also respect solar radiation
 
 ```{r}
+
 harvard_temp <- harvard_phenocam_data |>
   group_by(year) |>
   dplyr::mutate(
@@ -94,13 +97,13 @@ harvard_temp <- harvard_phenocam_data |>
     year,
     tmean,
     gdd,
-    srad..W.m.2.
+    srad..W.m.2. #Now we added also solar radiation
   ) |>
-  dplyr::ungroup()
+  dplyr::ungroup()|>
+  mutate(site = "Harvard") #we give a name to be able to identify the sites later on
 
-
+#we do the same for bartel-site
 bartel_temp <- bartel_phenocam_data |>
-  mutate(year = year(transition_10))|>
   group_by(year) |>
   dplyr::mutate(
     tmean = (tmax..deg.c. + tmin..deg.c.)/2
@@ -116,10 +119,12 @@ bartel_temp <- bartel_phenocam_data |>
     gdd,
     srad..W.m.2.
   ) |>
-  dplyr::ungroup()
+  dplyr::ungroup()|>
+    mutate(site = "Bartel")
+all_temp <- rbind(bartel_temp,harvard_temp) #then we combine the dataset
 
 ```
-
+Now we process the phenology data
 ```{r}
 harvard_phenology <- harvard_phenology |>
   mutate(
@@ -131,8 +136,24 @@ harvard_phenology <- harvard_phenology |>
     doy,
     transition_25,
     threshold_25
-  )
+  )|>
+    mutate(site = "Harvard")
 
+bartel_phenology <- bartel_phenology |>
+  mutate(
+    doy = as.numeric(format(as.Date(transition_25),"%j")),
+    year = as.numeric(format(as.Date(transition_25),"%Y"))
+  ) |>
+  select(
+    year,
+    doy,
+    transition_25,
+    threshold_25
+  )|>
+    mutate(site = "Bartel")
+
+
+all_pheno <- rbind(bartel_phenology,harvard_phenology) #again we combine
 
 ```
 
@@ -153,12 +174,10 @@ gdd_model <- function(data_met, par) {
 
 
   gdd <- cumsum(ifelse(temp > temp_threshold, temp - temp_threshold, 0))
-  gdd <- gdd + (sol-mean(sol))/sd(sol)*solar_impact
-  # figure out when the number of growing
-  # degree days exceeds the minimum value
+  gdd <- gdd + (sol-mean(sol))/sd(sol)*solar_impact #A z standardized impact of the precipitation on gdd...
 
-  # required for leaf development, only
-  # return the first value
+
+
   doy <- unlist(which(gdd >= gdd_crit)[1])
 
   return(doy)
@@ -173,10 +192,12 @@ rmse_gdd <- function(par, data) {
   drivers <- data$drivers
   validation <- data$validation
 
+
+
   # calculate phenology predictions
   # and put in a data frame
   predictions <- drivers |>
-    group_by(year) |>
+    group_by(year,site) |> #now also sites
     summarise(
       predictions = gdd_model(
         data_met = c(tmean,srad..W.m.2.),
@@ -184,7 +205,7 @@ rmse_gdd <- function(par, data) {
       )
     )
 
-  predictions <- left_join(predictions, validation, by = "year")
+  predictions <- left_join(predictions, validation, by = c("year","site"))
 
   rmse <- predictions |>
     summarise(
@@ -210,8 +231,8 @@ upper <- c(45,500,10000)
 # single data file, a nested data structure
 # will therefore accept non standard data formats
 data <- list(
-  drivers = harvard_temp,
-  validation = harvard_phenology
+  drivers = all_temp,
+  validation = all_pheno
 )
 
 # optimize the model parameters
@@ -234,8 +255,8 @@ optim_par = GenSA::GenSA(
 
 ```{r}
 
-predictions <- harvard_temp |>
-  group_by(year) |>
+predictions <- all_temp |>
+  group_by(year,site) |>
   summarize(
     prediction = gdd_model(
       data_met = c(tmean,srad..W.m.2.),
@@ -245,7 +266,7 @@ predictions <- harvard_temp |>
 
 
 # join predicted with observed data
-validation <- left_join(predictions, harvard_phenology)
+validation <- left_join(predictions, all_pheno)
 
 ggplot2::ggplot(validation) +
   geom_smooth(
@@ -281,7 +302,7 @@ ggplot2::ggplot(validation) +
 
 
 ```{r}
-library(daymetr)
+
 
 # Download daily data
 # daymetr::download_daymet_tiles(
@@ -347,8 +368,7 @@ predicted_phenology <- terra::app(
 
 ```{r}
 
-library(leaflet)
-library(terra)
+
 
 # set te colour scale manually
 pal <- colorNumeric(
@@ -383,8 +403,8 @@ leaflet() |>
 ```
 
 ```{r}
-# load libraries
-library(MODISTools)
+
+
 
 # download and save phenology data
 phenology <- MODISTools::mt_subset(
