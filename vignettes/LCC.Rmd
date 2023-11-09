@@ -1,0 +1,184 @@
+---
+title: "LCC"
+author: "Nils Tinner"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+packages <- c("parsnip","workflows","tune","dials","dplyr","caret","tidyverse")
+
+source("../R/load_packages.R")
+load_packages(packages)
+
+
+
+```
+
+
+```{r}
+
+
+
+
+test_final <- readRDS("../data/test_data.rds")
+train <- readRDS("../data/training_data.rds") |>
+  select(-c(pixelID,lat,lon))
+
+
+ml_df_split <- train |>
+  rsample::initial_split(
+  strata = LC1,
+  prop = 0.8
+)
+train <- rsample::training(ml_df_split)
+test <- rsample::testing(ml_df_split)
+
+```
+
+
+
+
+```{r}
+
+# type of task we want to evaluate
+model_settings <- parsnip::boost_tree(
+  trees = tune(),
+  min_n = tune(),
+  tree_depth = tune(),
+  learn_rate = tune(),
+  loss_reduction = tune(),
+  stop_iter = 20
+  ) |>
+  set_engine("xgboost",nthread = 12) |>
+  set_mode("classification")
+
+# create a workflow compatible with
+# the {tune} package which combines
+# model settings with the desired
+# model structure (data / formula)
+xgb_workflow <- workflows::workflow() |>
+  add_formula(as.factor(LC1) ~ .) |>
+  add_model(model_settings)
+
+print(xgb_workflow)
+
+```
+
+```{r}
+
+
+hp_settings <- dials::grid_latin_hypercube(
+  tune::extract_parameter_set_dials(xgb_workflow),
+  size = 3
+)
+
+print(hp_settings)
+```
+
+
+
+
+
+```{r}
+# set the folds (division into different)
+# cross-validation training datasets
+folds <- rsample::vfold_cv(train, v = 3)
+
+# optimize the model (hyper) parameters
+# using the:
+# 1. workflow (i.e. model)
+# 2. the cross-validation across training data
+# 3. the (hyper) parameter specifications
+# all data are saved for evaluation
+xgb_results <- tune::tune_grid(
+  xgb_workflow,
+  resamples = folds,
+  grid = hp_settings,
+  control = tune::control_grid(save_pred = TRUE,verbose = T)
+)
+```
+
+
+
+
+```{r}
+# select the best model based upon
+# the root mean squared error
+xgb_best <- tune::select_best(
+  xgb_results,
+  metric = "roc_auc"
+  )
+
+# cook up a model using finalize_workflow
+# which takes workflow (model) specifications
+# and combines it with optimal model
+# parameters into a model workflow
+xgb_best_hp <- tune::finalize_workflow(
+  xgb_workflow,
+  xgb_best
+)
+
+print(xgb_best_hp)
+
+
+
+```
+
+
+
+```{r}
+
+# train a final (best) model with optimal
+# hyper-parameters
+xgb_best_model <- fit(xgb_best_hp, train)
+
+
+
+
+
+```
+#Model Parm as optimized:
+Main Arguments:
+  trees = 1355
+  min_n = 8
+  tree_depth = 6
+  learn_rate = 0.00133209087929109
+  loss_reduction = 0.000177477872690972
+  sample_size = 0.307245306298137
+  stop_iter = 3
+
+Engine-Specific Arguments:
+  nthread = 7
+
+Computational engine: xgboost 
+
+```{r}
+# run the model on our test data
+# using predict()
+test_results <- predict(xgb_best_model, test)
+
+# load the caret library to
+# access confusionMatrix functionality
+
+
+
+```
+
+
+```{r}
+# use caret's confusionMatrix function to get
+# a full overview of metrics
+caret::confusionMatrix(
+  reference = as.factor(test$LC1),
+  data = as.factor(test_results$.pred_class)
+  )
+
+
+
+
+test_final$prediction <- predict(xgb_best_model, test_final)
+write.csv(test_final,"../data/LC.csv")
+```
+
+
