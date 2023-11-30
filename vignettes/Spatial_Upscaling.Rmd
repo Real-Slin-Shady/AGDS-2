@@ -1,0 +1,271 @@
+---
+title: "Spatial_Upscaling"
+author: "Nils Tinner"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+# Notes to paper Ludwig et al. 2023
+
+Explain the difference between a random cross-validation and a spatial cross-validation... -\>In random cross validation the training dataset is split randomly. Therefore folds are just checking if the prediction task is applicable to the training-dataset at hand. Whereas the spatial cross validation creates the folds based on the distances. The sites are grouped by geographic location (ex. blocks of 6 degree by 6 degree) and then the folds are created based on where the site lies. Then crossvalidation is performed. This aims at understanding if the model is able to predict locations that are not known and to see if there is a real connection for the covariates to the predictor target. (The actual aim is to see if the performace of the model is strong also under differing covariates levels?)
+
+In spatial upscaling, we model the target based on environmental covariates. This implies that we assume the training data to sufficiently represent the conditions on which the model will be applied for generating predictions. Prediction errors may increase with an increasing distance of the prediction location from the training locations. The paper by Ludwig et al. (2023) considers this "distance" as a geographical distance in Euclidian space. Do you see an alternative to measuring a distance that considers the task of spatial upscaling based on environmental covariates more directly? -\> Yes, maybe use similarity in covariates? so look at how much the covariates differ and then make folds according to variance in covariates. Then one can also check if prediction task lies outside of known covariates boundries...
+
+```{R}
+packages <- c("tidyverse","recipes","ggplot2","sf","rnaturalearth","rnaturalearthdata","caret","ranger") 
+
+source("../R/load_packages.R")
+load_packages(packages)#loading
+
+
+```
+
+```{R}
+df <- readr::read_csv("https://raw.githubusercontent.com/stineb/leafnp_data/main/data/leafnp_tian_et_al.csv")
+
+common_species <- df |> 
+  group_by(Species) |> 
+  summarise(count = n()) |> 
+  arrange(desc(count)) |> 
+  dplyr::slice(1:50) |> 
+  pull(Species)
+
+dfs <- df |> 
+  dplyr::select(leafN, lon, lat, elv, mat, map, ndep, mai, Species) |> 
+  filter(Species %in% common_species)
+  # group_by(lon, lat) |> 
+  # summarise(across(where(is.numeric), mean))
+
+# quick overview of data
+skimr::skim(dfs)
+
+```
+
+```{R}
+pp <- recipes::recipe(leafN ~ elv + mat + map + ndep + mai + Species, 
+                      data = dfs) |> 
+  recipes::step_center(recipes::all_numeric(), -recipes::all_outcomes()) |>
+  recipes::step_scale(recipes::all_numeric(), -recipes::all_outcomes())
+
+
+mod_random_cv <- train(
+  pp, 
+  data = dfs %>% 
+    drop_na(), 
+  method = "ranger",
+  trControl = trainControl(method = "cv", number = 5, savePredictions = "final"),
+  tuneGrid = expand.grid( .mtry = 3,
+                          .min.node.size = 12,
+                          .splitrule = "variance"),
+  metric = "RMSE",
+  replace = FALSE,
+  sample.fraction = 0.5,
+  num.trees = 200,           # high number ok since no hperparam tuning
+  seed = 1982                # for reproducibility
+)
+
+knitr::kable(mod_random_cv$resample)
+
+```
+
+```{R}
+
+# get coast outline
+coast <- rnaturalearth::ne_coastline(scale = 110, returnclass = "sf")
+
+ggplot() +
+
+  # plot coastline
+  geom_sf(data = coast,
+          colour = 'black',
+          size = 0.2) +
+
+  # set extent in longitude and latitude
+  coord_sf(
+    ylim = c(-60, 80),
+    expand = FALSE) +  # to draw map strictly bounded by the specified extent
+  
+  # plot points on map
+  geom_point(data = dfs, aes(x = lon, y = lat), color = "red", size = 0.2) +
+  labs(x = "", y = "") +
+  theme(legend.position = "bottom")
+
+```
+
+What do you observe? Discuss the potential implications of the geographical distribution of data points for spatial upscaling.
+-> Heavy clustering in Europe and SE-Asia. Almost no sites in America or Africa
+
+
+Perform a spatial cross-validation. To do so, first identify geographical clusters of the data using the k-means algorithm (an unsupervised machine learning method), considering the longitude and latitude of data points and setting 
+. Plot points on a global map, showing the five clusters with distinct colors.
+
+```{R}
+
+lonlat <- dfs |>
+  select(lon,lat)
+
+dfs$cluster <- as.factor(kmeans(lonlat,centers = 5)$cluster)
+
+
+
+ggplot() +
+
+  # plot coastline
+  geom_sf(data = coast,
+          colour = 'black',
+          size = 0.2) +
+
+  # set extent in longitude and latitude
+  coord_sf(
+    ylim = c(-60, 80),
+    expand = FALSE) +  # to draw map strictly bounded by the specified extent
+  
+  # plot points on map
+  geom_point(data = dfs, aes(x = lon, y = lat, colour = cluster),  size = 0.2) +
+  labs(x = "", y = "") +
+  theme(legend.position = "bottom")
+
+```
+Plot the distribution of leaf N by cluster.
+```{r}
+ggplot(dfs,aes(x = cluster,y = leafN))+
+  geom_boxplot()
+```
+Split your data into five folds that correspond to the geographical clusters identified by in (2.), and fit a random forest model with the same hyperparameters as above and performing a 5-fold cross-validation with the clusters as folds. Report the RMSE and the R
+ determined on each of the five folds
+ 
+
+
+
+
+```{r}
+
+# create folds based on clusters
+# assuming 'df' contains the data and a column called 'cluster' containing the 
+# result of the k-means clustering
+group_folds_train <- purrr::map(
+  seq(length(unique(dfs$cluster))),
+  ~ {
+    dfs |> 
+      select(cluster) |> 
+      mutate(idx = 1:n()) |> 
+      filter(cluster != .) |> 
+      pull(idx)
+  }
+)
+
+group_folds_test <- purrr::map(
+  seq(length(unique(dfs$cluster))),
+  ~ {
+    dfs |> 
+      select(cluster) |> 
+      mutate(idx = 1:n()) |> 
+      filter(cluster == .) |> 
+      pull(idx)
+  }
+)
+```
+
+```{r}
+# create a function that trains a random forest model on a given set of rows and 
+# predicts on a disjunct set of rows
+train_test_by_fold <- function(idx_train, idx_val){
+      data_predict <- dfs |> dplyr::slice(idx_train)
+      data_eval <- dfs |> dplyr::slice(idx_val)
+  mod <- ranger::ranger(
+
+    x =  data_predict |> select(elv, mat, map, ndep, mai, Species),  # data frame with columns corresponding to predictors
+    y =   data_predict |>  select(leafN) |> unlist(),# a vector of the target values (not a data frame!)
+    num.trees = 200,
+    mtry = 3,
+    min.node.size = 12,
+    splitrule = "variance",
+    replace = FALSE,
+    sample.fraction = 0.5,
+  )
+
+
+  data_eval$pred <- predict(mod,       # the fitted model object 
+                  data =  data_eval |>dplyr::select(elv, mat, map, ndep, mai, Species)# a data frame with columns corresponding to predictors
+                  )$predictions
+
+  metrics_test <- data_eval |>
+  yardstick::metrics(leafN, pred)
+  
+  rsq <- metrics_test |>
+  filter(.metric == "rsq") |>
+  pull(.estimate)  # the R-squared determined on the validation set
+  
+  rmse <- metrics_test |>
+  filter(.metric == "rmse") |>
+  pull(.estimate)# the root mean square error on the validation set
+
+  return(tibble(rsq = rsq, rmse = rmse))
+}
+
+
+# apply function on each custom fold and collect validation results in a nice
+# data frame
+out <- purrr::map2_dfr(
+  group_folds_train,
+  group_folds_test,
+  ~train_test_by_fold(.x, .y)
+) |> 
+  mutate(test_fold = 1:5)
+
+```
+
+
+```{r}
+
+env <- dfs |>
+  select(mat,map)
+
+dfs$cluster <- as.factor(kmeans(env,centers = 5)$cluster)
+
+
+
+
+# create folds based on clusters
+# assuming 'df' contains the data and a column called 'cluster' containing the 
+# result of the k-means clustering
+group_folds_train <- purrr::map(
+  seq(length(unique(dfs$cluster))),
+  ~ {
+    dfs |> 
+      select(cluster) |> 
+      mutate(idx = 1:n()) |> 
+      filter(cluster != .) |> 
+      pull(idx)
+  }
+)
+
+group_folds_test <- purrr::map(
+  seq(length(unique(dfs$cluster))),
+  ~ {
+    dfs |> 
+      select(cluster) |> 
+      mutate(idx = 1:n()) |> 
+      filter(cluster == .) |> 
+      pull(idx)
+  }
+)
+
+
+# create a function that trains a random forest model on a given set of rows and 
+# predicts on a disjunct set of rows
+
+# apply function on each custom fold and collect validation results in a nice
+# data frame
+out <- purrr::map2_dfr(
+  group_folds_train,
+  group_folds_test,
+  ~train_test_by_fold(.x, .y)
+) |> 
+  mutate(test_fold = 1:5)
+
+
+
+
+```
+

@@ -29,10 +29,14 @@ train <- readRDS("../data/training_data.rds") |>
 ml_df_split <- train |>
   rsample::initial_split(
   strata = LC1,
-  prop = 0.8
+  prop = 0.9
 )
-train <- rsample::training(ml_df_split)
+#the dirty, better way:
+# train <- rsample::training(ml_df_split)
 test <- rsample::testing(ml_df_split)
+
+
+
 
 ```
 
@@ -177,8 +181,13 @@ caret::confusionMatrix(
 
 
 
-test_final$prediction <- predict(xgb_best_model, test_final)
-write.csv(test_final,"../data/LC.csv")
+prediction <- predict(xgb_best_model, test_final)
+
+prediction <-prediction |>
+  mutate(lulc_class = .pred_class) |>
+  select(-.pred_class)
+write_csv(prediction,"../data/real-slin-shady_results.csv")
+
 ```
 
 
