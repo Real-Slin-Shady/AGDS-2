@@ -32,7 +32,8 @@ common_species <- df |>
 
 dfs <- df |> 
   dplyr::select(leafN, lon, lat, elv, mat, map, ndep, mai, Species) |> 
-  filter(Species %in% common_species)
+  filter(Species %in% common_species) |>
+  mutate(Species = as.factor(Species))
   # group_by(lon, lat) |> 
   # summarise(across(where(is.numeric), mean))
 
@@ -172,6 +173,7 @@ group_folds_test <- purrr::map(
 train_test_by_fold <- function(idx_train, idx_val){
       data_predict <- dfs |> dplyr::slice(idx_train)
       data_eval <- dfs |> dplyr::slice(idx_val)
+
   mod <- ranger::ranger(
 
     x =  data_predict |> select(elv, mat, map, ndep, mai, Species),  # data frame with columns corresponding to predictors
@@ -212,6 +214,7 @@ out <- purrr::map2_dfr(
   ~train_test_by_fold(.x, .y)
 ) |> 
   mutate(test_fold = 1:5)
+knitr::kable(out)
 
 ```
 
@@ -264,7 +267,7 @@ out <- purrr::map2_dfr(
 ) |> 
   mutate(test_fold = 1:5)
 
-
+knitr::kable(out)
 
 
 ```
