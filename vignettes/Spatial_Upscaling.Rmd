@@ -9,7 +9,9 @@ output: html_document
 
 Explain the difference between a random cross-validation and a spatial cross-validation... -\>In random cross validation the training dataset is split randomly. Therefore folds are just checking if the prediction task is applicable to the training-dataset at hand. Whereas the spatial cross validation creates the folds based on the distances. The sites are grouped by geographic location (ex. blocks of 6 degree by 6 degree) and then the folds are created based on where the site lies. Then crossvalidation is performed. This aims at understanding if the model is able to predict locations that are not known and to see if there is a real connection for the covariates to the predictor target. (The actual aim is to see if the performace of the model is strong also under differing covariates levels?)
 
-In spatial upscaling, we model the target based on environmental covariates. This implies that we assume the training data to sufficiently represent the conditions on which the model will be applied for generating predictions. Prediction errors may increase with an increasing distance of the prediction location from the training locations. The paper by Ludwig et al. (2023) considers this "distance" as a geographical distance in Euclidian space. Do you see an alternative to measuring a distance that considers the task of spatial upscaling based on environmental covariates more directly? -\> Yes, maybe use similarity in covariates? so look at how much the covariates differ and then make folds according to variance in covariates. Then one can also check if prediction task lies outside of known covariates boundries...
+In spatial upscaling, we model the target based on environmental covariates. This implies that we assume the training data to sufficiently represent the conditions on which the model will be applied for generating predictions. Prediction errors may increase with an increasing distance of the prediction location from the training locations. The paper by Ludwig et al. (2023) considers this "distance" as a geographical distance in Euclidian space. Do you see an alternative to measuring a distance that considers the task of spatial upscaling based on environmental covariates more directly? -\> Yes, maybe use similarity in covariates? so look at how much the covariates differ and then make folds according to variance in covariates. These covariates should then be of environmental origin themselves. Then one can also check if prediction task lies outside of known covariates boundries... This then lets one check if model can be applied to all of map.
+
+## Setup
 
 ```{R}
 packages <- c("tidyverse","recipes","ggplot2","sf","rnaturalearth","rnaturalearthdata","caret","ranger") 
@@ -19,6 +21,8 @@ load_packages(packages)#loading
 
 
 ```
+
+## Readin and data processing as in excercise
 
 ```{R}
 df <- readr::read_csv("https://raw.githubusercontent.com/stineb/leafnp_data/main/data/leafnp_tian_et_al.csv")
@@ -41,6 +45,8 @@ dfs <- df |>
 skimr::skim(dfs)
 
 ```
+
+## Define simple model with random cross-validation
 
 ```{R}
 pp <- recipes::recipe(leafN ~ elv + mat + map + ndep + mai + Species, 
@@ -66,8 +72,12 @@ mod_random_cv <- train(
 )
 
 knitr::kable(mod_random_cv$resample)
+mean(mod_random_cv$resample$RMSE)
+mean(mod_random_cv$resample$Rsquared)
 
 ```
+
+## Define spatial cross-validation
 
 ```{R}
 
@@ -93,12 +103,11 @@ ggplot() +
 
 ```
 
-What do you observe? Discuss the potential implications of the geographical distribution of data points for spatial upscaling.
--> Heavy clustering in Europe and SE-Asia. Almost no sites in America or Africa
+What do you observe? Discuss the potential implications of the geographical distribution of data points for spatial upscaling. -\> Heavy clustering in Europe and SE-Asia. Almost no sites in America or Africa
 
+## Spatial corss-validation
 
-Perform a spatial cross-validation. To do so, first identify geographical clusters of the data using the k-means algorithm (an unsupervised machine learning method), considering the longitude and latitude of data points and setting 
-. Plot points on a global map, showing the five clusters with distinct colors.
+Perform a spatial cross-validation. To do so, first identify geographical clusters of the data using the k-means algorithm (an unsupervised machine learning method), considering the longitude and latitude of data points and setting . Plot points on a global map, showing the five clusters with distinct colors.
 
 ```{R}
 
@@ -127,17 +136,17 @@ ggplot() +
   theme(legend.position = "bottom")
 
 ```
+
 Plot the distribution of leaf N by cluster.
+
 ```{r}
 ggplot(dfs,aes(x = cluster,y = leafN))+
   geom_boxplot()
 ```
-Split your data into five folds that correspond to the geographical clusters identified by in (2.), and fit a random forest model with the same hyperparameters as above and performing a 5-fold cross-validation with the clusters as folds. Report the RMSE and the R
- determined on each of the five folds
- 
 
+Split your data into five folds that correspond to the geographical clusters identified by in (2.), and fit a random forest model with the same hyperparameters as above and performing a 5-fold cross-validation with the clusters as folds. Report the RMSE and the R determined on each of the five folds
 
-
+## Forlds by cluster
 
 ```{r}
 
@@ -166,6 +175,8 @@ group_folds_test <- purrr::map(
   }
 )
 ```
+
+## Corss-validation by hand
 
 ```{r}
 # create a function that trains a random forest model on a given set of rows and 
@@ -215,9 +226,11 @@ out <- purrr::map2_dfr(
 ) |> 
   mutate(test_fold = 1:5)
 knitr::kable(out)
+print("Mean values spatial CV:")
+print(paste0("RSQ: ",round(mean(out$rsq),2)))
+print(paste0("RMSE: ",round(mean(out$rmse),2)))
 
 ```
-
 
 ```{r}
 
@@ -225,7 +238,31 @@ env <- dfs |>
   select(mat,map)
 
 dfs$cluster <- as.factor(kmeans(env,centers = 5)$cluster)
+ggplot() +
 
+  # plot coastline
+  geom_sf(data = coast,
+          colour = 'black',
+          size = 0.2) +
+
+  # set extent in longitude and latitude
+  coord_sf(
+    ylim = c(-60, 80),
+    expand = FALSE) +  # to draw map strictly bounded by the specified extent
+  
+  # plot points on map
+  geom_point(data = dfs, aes(x = lon, y = lat, colour = cluster),  size = 0.2) +
+  labs(x = "", y = "") +
+  theme(legend.position = "bottom")
+
+
+```
+
+## Enviromental cross-validation
+
+To do so, perform a custom cross-validation as above, but this time considering five clusters of points not in geographical space, but in environmental space - spanned by the mean annual precipitation and the mean annual temperature. Report the R-squared and the RMSE on the validation set of each of the five folds.
+
+```{r}
 
 
 
@@ -267,8 +304,14 @@ out <- purrr::map2_dfr(
 ) |> 
   mutate(test_fold = 1:5)
 
-knitr::kable(out)
+knitr::kable(tibble(out))
 
+print("Mean values enviromental CV:")
+print(paste0("RSQ: ",round(mean(out$rsq),2)))
+print(paste0("RMSE: ",round(mean(out$rmse),2)))
 
 ```
 
+## Comparison of results
+
+The best metrics of all model has the random cross validation model. This is to be expected since data from all sites are in all folds and thus no spatial or environmental validation is made. The RMSE of the spatial and environmental cross validation are almost the same with but the RSQ is higher with the environmental cross validation. This probably means that the folds are more similar to each other and thus have a higher predictive power then when doing a spatial cross validation. All in all the prefered solution should be a spatial or enviromental cross-validation since it is more sincere about the predictive power of the model in novel sites. A good solution would be to check if the new enviromental covariates that are presented to the model when performing a spatial upsacling were present in the training data. If true, this then further validates the model. If not, new training data should be optained or the spatial upsacling should only be performed to the areas with known enviromental covariates. This is because models perform poorly when exposed to data outside of the training values. (CITATION PAPER ABOVE)
