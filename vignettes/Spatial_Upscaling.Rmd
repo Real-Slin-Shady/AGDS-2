@@ -12,7 +12,7 @@ Explain the difference between a random cross-validation and a spatial cross-val
 In spatial upscaling, we model the target based on environmental covariates. This implies that we assume the training data to sufficiently represent the conditions on which the model will be applied for generating predictions. Prediction errors may increase with an increasing distance of the prediction location from the training locations. The paper by Ludwig et al. (2023) considers this "distance" as a geographical distance in Euclidian space. Do you see an alternative to measuring a distance that considers the task of spatial upscaling based on environmental covariates more directly? -\> Yes, maybe use similarity in covariates? so look at how much the covariates differ and then make folds according to variance in covariates. These covariates should then be of environmental origin themselves. Then one can also check if prediction task lies outside of known covariates boundries... This then lets one check if model can be applied to all of map.
 
 ## Setup
-
+Loading all the packages
 ```{R}
 packages <- c("tidyverse","recipes","ggplot2","sf","rnaturalearth","rnaturalearthdata","caret","ranger") 
 
@@ -22,8 +22,8 @@ load_packages(packages)#loading
 
 ```
 
-## Readin and data processing as in excercise
-
+## Read-in and data processing as in excercise
+No further specification
 ```{R}
 df <- readr::read_csv("https://raw.githubusercontent.com/stineb/leafnp_data/main/data/leafnp_tian_et_al.csv")
 
@@ -47,7 +47,7 @@ skimr::skim(dfs)
 ```
 
 ## Define simple model with random cross-validation
-
+Directly from AGDS 1, no hyperparameter tuning, cv random, 5 fold. Predictors as specified in exercise.
 ```{R}
 pp <- recipes::recipe(leafN ~ elv + mat + map + ndep + mai + Species, 
                       data = dfs) |> 
@@ -72,12 +72,12 @@ mod_random_cv <- train(
 )
 
 knitr::kable(mod_random_cv$resample)
-mean(mod_random_cv$resample$RMSE)
-mean(mod_random_cv$resample$Rsquared)
+print(paste0("RMSE : ",mean(mod_random_cv$resample$RMSE)))
+print(paste0("RSQ : ", mean(mod_random_cv$resample$Rsquared)))
 
 ```
 
-## Define spatial cross-validation
+## Spatial cross-validation
 
 ```{R}
 
@@ -97,24 +97,24 @@ ggplot() +
     expand = FALSE) +  # to draw map strictly bounded by the specified extent
   
   # plot points on map
-  geom_point(data = dfs, aes(x = lon, y = lat), color = "red", size = 0.2) +
+  geom_point(data = dfs, aes(x = lon, y = lat), color = "red", size = 0.4) +
   labs(x = "", y = "") +
   theme(legend.position = "bottom")
 
 ```
 
-What do you observe? Discuss the potential implications of the geographical distribution of data points for spatial upscaling. -\> Heavy clustering in Europe and SE-Asia. Almost no sites in America or Africa
+Task:: What do you observe? Discuss the potential implications of the geographical distribution of data points for spatial upscaling. -> Heavy clustering in Europe and SE-Asia. Almost no sites in America or Africa
 
-## Spatial corss-validation
+### Spatial clusters
 
-Perform a spatial cross-validation. To do so, first identify geographical clusters of the data using the k-means algorithm (an unsupervised machine learning method), considering the longitude and latitude of data points and setting . Plot points on a global map, showing the five clusters with distinct colors.
+Task:: Perform a spatial cross-validation. To do so, first identify geographical clusters of the data using the k-means algorithm (an unsupervised machine learning method), considering the longitude and latitude of data points and setting . Plot points on a global map, showing the five clusters with distinct colors.
 
 ```{R}
 
 lonlat <- dfs |>
   select(lon,lat)
 
-dfs$cluster <- as.factor(kmeans(lonlat,centers = 5)$cluster)
+dfs$cluster_spat <- as.factor(kmeans(lonlat,centers = 5)$cluster)
 
 
 
@@ -131,22 +131,45 @@ ggplot() +
     expand = FALSE) +  # to draw map strictly bounded by the specified extent
   
   # plot points on map
-  geom_point(data = dfs, aes(x = lon, y = lat, colour = cluster),  size = 0.2) +
+  geom_point(data = dfs, aes(x = lon, y = lat, colour = cluster_spat),  size = 0.4) +
   labs(x = "", y = "") +
   theme(legend.position = "bottom")
 
 ```
+we see spatially formed clusters. Interestingly western europe with all of the americas. Probably due to little data availability.
 
-Plot the distribution of leaf N by cluster.
+Task:: Plot the distribution of leaf N by cluster.
 
 ```{r}
-ggplot(dfs,aes(x = cluster,y = leafN))+
-  geom_boxplot()
+
+# Boxplot
+boxplot <- ggplot(dfs, aes(x = cluster_spat, y = leafN, col = as.factor(cluster_spat))) +
+  geom_boxplot() +
+  labs(x = "cluster", y = "leaf nitrogen", col = "cluster") +
+  theme_classic()+
+    scale_color_viridis_d()
+
+
+# Density plot without fill
+density_plot <- ggplot(dfs, aes(x = leafN, col = as.factor(cluster_spat))) +
+  geom_density(alpha = 0.5) +  # Adjust alpha for transparency
+  labs(x = "leaf nitrogen", y = "Density", col = "cluster") +
+  theme_classic()+
+    scale_color_viridis_d()
+
+
+# Combine both plots
+combined_plots <- cowplot::plot_grid(boxplot, density_plot, ncol = 2, align = "v")
+
+# Display combined plots
+combined_plots
+
 ```
+We observe similar distributions of the mean with cluster 2 being very dense around the mean leaf nitrogen.
 
-Split your data into five folds that correspond to the geographical clusters identified by in (2.), and fit a random forest model with the same hyperparameters as above and performing a 5-fold cross-validation with the clusters as folds. Report the RMSE and the R determined on each of the five folds
+Task:: Split your data into five folds that correspond to the geographical clusters identified by in (2.), and fit a random forest model with the same hyperparameters as above and performing a 5-fold cross-validation with the clusters as folds. Report the RMSE and the R determined on each of the five folds
 
-## Forlds by cluster
+### Folds by cluster for spatial folds
 
 ```{r}
 
@@ -154,29 +177,29 @@ Split your data into five folds that correspond to the geographical clusters ide
 # assuming 'df' contains the data and a column called 'cluster' containing the 
 # result of the k-means clustering
 group_folds_train <- purrr::map(
-  seq(length(unique(dfs$cluster))),
+  seq(length(unique(dfs$cluster_spat))),
   ~ {
     dfs |> 
-      select(cluster) |> 
+      select(cluster_spat) |> 
       mutate(idx = 1:n()) |> 
-      filter(cluster != .) |> 
+      filter(cluster_spat != .) |> 
       pull(idx)
   }
 )
 
 group_folds_test <- purrr::map(
-  seq(length(unique(dfs$cluster))),
+  seq(length(unique(dfs$cluster_spat))),
   ~ {
     dfs |> 
-      select(cluster) |> 
+      select(cluster_spat) |> 
       mutate(idx = 1:n()) |> 
-      filter(cluster == .) |> 
+      filter(cluster_spat == .) |> 
       pull(idx)
   }
 )
 ```
 
-## Corss-validation by hand
+### Corss-validation by hand for spatial folds
 
 ```{r}
 # create a function that trains a random forest model on a given set of rows and 
@@ -231,13 +254,16 @@ print(paste0("RSQ: ",round(mean(out$rsq),2)))
 print(paste0("RMSE: ",round(mean(out$rmse),2)))
 
 ```
+## Enviromental Cross Validation
+Task:: To do so, perform a custom cross-validation as above, but this time considering five clusters of points not in geographical space, but in environmental space - spanned by the mean annual precipitation and the mean annual temperature. Report the R-squared and the RMSE on the validation set of each of the five folds.
 
+### Define the enviromental clusters.
 ```{r}
 
 env <- dfs |>
   select(mat,map)
 
-dfs$cluster <- as.factor(kmeans(env,centers = 5)$cluster)
+dfs$cluster_env <- as.factor(kmeans(env,centers = 5)$cluster)
 ggplot() +
 
   # plot coastline
@@ -251,42 +277,69 @@ ggplot() +
     expand = FALSE) +  # to draw map strictly bounded by the specified extent
   
   # plot points on map
-  geom_point(data = dfs, aes(x = lon, y = lat, colour = cluster),  size = 0.2) +
+  geom_point(data = dfs, aes(x = lon, y = lat, colour = cluster_env),  size = 0.2) +
   labs(x = "", y = "") +
   theme(legend.position = "bottom")
 
 
+ggplot(data = dfs,aes(x = mat,y = map, col = cluster_env)) +
+  geom_point()+
+  labs( x = "mean annual temperature [Celsius]",y = "mean annual precipitation [mm]", col = "cluster")+
+  theme_classic()
+
+
+# Boxplot
+boxplot <- ggplot(dfs, aes(x = cluster_env, y = leafN, col = cluster_env)) +
+  geom_boxplot() +
+  labs(x = "cluster", y = "leaf nitrogen", col = "cluster") +
+  theme_classic()+
+    scale_color_viridis_d()
+
+
+# Density plot without fill
+density_plot <- ggplot(dfs, aes(x = leafN, col = cluster_env)) +
+  geom_density(alpha = 0.5) +  # Adjust alpha for transparency
+  labs(x = "leaf nitrogen", y = "Density", col = "cluster") +
+  theme_classic()+
+  scale_color_viridis_d()
+
+
+# Combine both plots
+combined_plots <- cowplot::plot_grid(boxplot, density_plot, ncol = 2, align = "v")
+
+# Display combined plots
+combined_plots
 ```
+We observe similar distributions for all clusters of leaf nitrogen for the environmental cross validation folds.
 
-## Enviromental cross-validation
+### Enviromental cross-validation by hand
 
-To do so, perform a custom cross-validation as above, but this time considering five clusters of points not in geographical space, but in environmental space - spanned by the mean annual precipitation and the mean annual temperature. Report the R-squared and the RMSE on the validation set of each of the five folds.
 
 ```{r}
 
 
 
 # create folds based on clusters
-# assuming 'df' contains the data and a column called 'cluster' containing the 
-# result of the k-means clustering
+
+
 group_folds_train <- purrr::map(
-  seq(length(unique(dfs$cluster))),
+  seq(length(unique(dfs$cluster_env))),
   ~ {
     dfs |> 
-      select(cluster) |> 
+      select(cluster_env) |> 
       mutate(idx = 1:n()) |> 
-      filter(cluster != .) |> 
+      filter(cluster_env != .) |> 
       pull(idx)
   }
 )
 
 group_folds_test <- purrr::map(
-  seq(length(unique(dfs$cluster))),
+  seq(length(unique(dfs$cluster_env))),
   ~ {
     dfs |> 
-      select(cluster) |> 
+      select(cluster_env) |> 
       mutate(idx = 1:n()) |> 
-      filter(cluster == .) |> 
+      filter(cluster_env == .) |> 
       pull(idx)
   }
 )
