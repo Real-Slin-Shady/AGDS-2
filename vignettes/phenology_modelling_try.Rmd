@@ -13,9 +13,9 @@ This excercise builds upon the model presented in "https://geco-bern.github.io/h
 
 This markdown implements adding more data and using an additional parameter.
 
-First, the same workflow for harvard is performed as in the turorial. This is also done for an additional site: Bartel.
+First, the same workflow for harvard data download is performed as in the turorial. This is also done for an additional site: Bartel.
 
-```{r}
+```{r, echo=FALSE}
 packages <- c("phenocamr","dplyr","ggplot2","lubridate","daymetr","leaflet","terra","MODISTools","daymetr") 
 
 source("../R/load_packages.R")
@@ -83,7 +83,7 @@ bartel_phenology <- readr::read_csv(
 ```
 Then gdd, tmean and rad are extracted for each date and site. This is the same as in the tutorial just now also with radiation and for both sites. Afterwards we combine both dataframes.
 
-```{r}
+```{r, echo=FALSE}
 #harvard temp and also radiation since used to improve model
 harvard_temp <- harvard_phenocam_data |>
   group_by(year) |>
@@ -127,7 +127,7 @@ all_temp <- rbind(bartel_temp,harvard_temp) #then we combine the dataset
 
 ```
 Now we process the phenology data as in the tutorial but for both sites. Afterwards we combine both dataframes.
-```{r}
+```{r, echo=FALSE}
 #for Harvard
 harvard_phenology <- harvard_phenology |>
   mutate(
@@ -187,7 +187,7 @@ gdd_model <- function(data_met, par) {
 }
 
 ```
-The rmse function is then the same as in the exercise. only now we also have the site id.
+The rmse function is then the same as in the exercise. Only now we also have the site id.
 
 ```{r}
 rmse_gdd <- function(par, data) {
@@ -228,7 +228,7 @@ Now we tune the model. For. this parameters are set as following:
 
 ```{r}
 # starting model parameters
-par = c(0, 130,1)
+par = c(0, 130,1) 
 
 # limits to the parameter space
 lower <- c(-10,0,0.000001)
@@ -258,9 +258,9 @@ optim_par = GenSA::GenSA(
 
 ```
 
-Now we plot the 
+Now we plot the model performence
 
-```{r}
+```{r, echo=FALSE}
 #make predictions
 predictions <- all_temp |>
   group_by(year,site) |>
@@ -390,9 +390,9 @@ predicted_phenology <- terra::app(
 
 ```
 
-First, a nico overview of the model predictions.
+First, a nice overview of the model predictions.
 
-```{r}
+```{r, echo=FALSE}
 
 
 
@@ -429,7 +429,7 @@ leaflet() |>
 ```
 
 Now we visually compare the modis data to our model. We also need to crop the modis and our data to the same extend.
-```{r}
+```{r, echo=FALSE}
 
 
 
@@ -502,7 +502,7 @@ predicted_phenology <- terra::mask(
  Interesting. We see almost no visible correlation. Lets check this:
  We perform a correlation for each pixel of the map of the modis data to our predicted data.
   
-```{r}
+```{r, echo=FALSE}
   
   #Now we compare for the year 2012
   predicted_df <- as.vector(predicted_phenology)
@@ -537,15 +537,13 @@ ggplot(
   theme_bw()
 ```
 Not looking very promising, a very waek correlation if at all. Lets generalize this to the years 2008-2012
-```{r}
+```{r, echo=FALSE}
 sct_df <- data.frame(
   doy_p = NULL,
   doy_m = NULL,
   year = NULL
   )
 for (temp_year in c(2008:2012)) {
-  print(temp_year)
-  print(str(sct_df))
 
 # calculate the daily mean values
 r <- daymetr::daymet_grid_tmean(

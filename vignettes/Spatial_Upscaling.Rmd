@@ -7,14 +7,14 @@ output: html_document
 
 # Notes to paper Ludwig et al. 2023
 
-Explain the difference between a random cross-validation and a spatial cross-validation... -\>In random cross validation the training dataset is split randomly. Therefore folds are just checking if the prediction task is applicable to the training-dataset at hand. Whereas the spatial cross validation creates the folds based on the distances. The sites are grouped by geographic location (ex. blocks of 6 degree by 6 degree) and then the folds are created based on where the site lies. Then crossvalidation is performed. This aims at understanding if the model is able to predict locations that are not known and to see if there is a real connection for the covariates to the predictor target. (The actual aim is to see if the performace of the model is strong also under differing covariates levels?)
+Explain the difference between a random cross-validation and a spatial cross-validation... -\>In random cross validation the training dataset is split randomly. Therefore folds are just checking if the prediction task is applicable to the training-dataset at hand over the entire space spanned by the covariates. Whereas the spatial cross validation creates the folds based on assigned geographic space. The sites are grouped by geographic location (ex. blocks of 6 degree by 6 degree) and then the folds are created based on where the site lies. Then crossvalidation is performed. This aims at understanding if the model is able to predict locations that are not known and so span a unknown covariate space though this is only done for geographic space in this case. They also perform a feature cross alidation with all the covariates (I assume).
 
-In spatial upscaling, we model the target based on environmental covariates. This implies that we assume the training data to sufficiently represent the conditions on which the model will be applied for generating predictions. Prediction errors may increase with an increasing distance of the prediction location from the training locations. The paper by Ludwig et al. (2023) considers this "distance" as a geographical distance in Euclidian space. Do you see an alternative to measuring a distance that considers the task of spatial upscaling based on environmental covariates more directly? -\> Yes, maybe use similarity in covariates? so look at how much the covariates differ and then make folds according to variance in covariates. These covariates should then be of environmental origin themselves. Then one can also check if prediction task lies outside of known covariates boundries... This then lets one check if model can be applied to all of map.
+In spatial upscaling, we model the target based on environmental covariates. This implies that we assume the training data to sufficiently represent the conditions on which the model will be applied for generating predictions. Prediction errors may increase with an increasing distance of the prediction location from the training locations. The paper by Ludwig et al. (2023) considers this "distance" as a geographical distance in Euclidian space. Do you see an alternative to measuring a distance that considers the task of spatial upscaling based on environmental covariates more directly? -\> Yes, maybe use similarity in covariates? so look at how much the covariates differ in the prediction sites and then make folds according to variance in covariates. These covariates should then be of environmental origin themselves. Then one can also check if prediction task lies outside of known covariates boundries. This then lets one check if model can be applied to all of map. This is done in the paper as well, also for the entire covariate space not just geographic, resulting in the area of applicability (AOA).
 
 ## Setup
 Loading all the packages
 ```{R}
-packages <- c("tidyverse","recipes","ggplot2","sf","rnaturalearth","rnaturalearthdata","caret","ranger") 
+packages <- c("tidyverse","recipes","ggplot2","sf","rnaturalearth","rnaturalearthdata","caret","ranger","skimr") 
 
 source("../R/load_packages.R")
 load_packages(packages)#loading
@@ -165,7 +165,7 @@ combined_plots <- cowplot::plot_grid(boxplot, density_plot, ncol = 2, align = "v
 combined_plots
 
 ```
-We observe similar distributions of the mean with cluster 2 being very dense around the mean leaf nitrogen.
+We observe similar distributions of the mean with cluster 2 being very dense around the mean leaf nitrogen. But the density for some clusters is much more dense then for others. This might implies that some clusters are more similar in regards to leaf nitrogen than others.
 
 Task:: Split your data into five folds that correspond to the geographical clusters identified by in (2.), and fit a random forest model with the same hyperparameters as above and performing a 5-fold cross-validation with the clusters as folds. Report the RMSE and the R determined on each of the five folds
 
@@ -261,7 +261,10 @@ Task:: To do so, perform a custom cross-validation as above, but this time consi
 ```{r}
 
 env <- dfs |>
-  select(mat,map)
+  mutate(mat_scale = scale(mat),
+         map_scale = scale(map))|> #we need to scale as well...
+  select(mat_scale,map_scale)  
+  
 
 dfs$cluster_env <- as.factor(kmeans(env,centers = 5)$cluster)
 ggplot() +
@@ -310,7 +313,7 @@ combined_plots <- cowplot::plot_grid(boxplot, density_plot, ncol = 2, align = "v
 # Display combined plots
 combined_plots
 ```
-We observe similar distributions for all clusters of leaf nitrogen for the environmental cross validation folds.
+We observe similar distributions for all clusters of leaf nitrogen for the environmental cross validation folds. But now, the density is more even for the clusters. This is probably because leaf nitrogen is now split more evenly across the folds because they are environmentally not spatially clustered.
 
 ### Enviromental cross-validation by hand
 
@@ -367,4 +370,7 @@ print(paste0("RMSE: ",round(mean(out$rmse),2)))
 
 ## Comparison of results
 
-The best metrics of all model has the random cross validation model. This is to be expected since data from all sites are in all folds and thus no spatial or environmental validation is made. The RMSE of the spatial and environmental cross validation are almost the same with but the RSQ is higher with the environmental cross validation. This probably means that the folds are more similar to each other and thus have a higher predictive power then when doing a spatial cross validation. All in all the prefered solution should be a spatial or enviromental cross-validation since it is more sincere about the predictive power of the model in novel sites. A good solution would be to check if the new enviromental covariates that are presented to the model when performing a spatial upsacling were present in the training data. If true, this then further validates the model. If not, new training data should be optained or the spatial upsacling should only be performed to the areas with known enviromental covariates. This is because models perform poorly when exposed to data outside of the training values. (CITATION PAPER ABOVE)
+The best metrics of all model has the random cross validation model. This is to be expected since data from all sites are in all folds and thus no spatial or environmental validation is made. The model performance is though not representative for the spatial upscaling task. The RSQ and the RMSE is higher with the environmental cross validation. This probably means that the folds are more similar to each other and thus have a higher predictive power then when doing a spatial cross validation. This is also visible in the different folds. The folds in the spatial upscaling perform vastly different to each other while in the enviromental upscaling the folds are more similar. Additionally by far the lowest predictive power of any cluster has a fold in the spatial upscaling further backing this up.
+
+
+All in all the preferred solution should be a spatial or enviromental cross-validation since it is more sincere about the predictive power of the model in novel sites and therefore spatial upscaling. A good solution would be to check if the new enviromental covariates that are present in each fold have a similar distances as when performing a spatial upsacling. If true, this then further validates the model. If not, new training data should be optained or the spatial upsacling should only be performed to the areas with known enviromental covariates. This is because models perform poorly when exposed to data outside of the training values. (CITATION PAPER ABOVE) This is also done with the AOA in the paper.
