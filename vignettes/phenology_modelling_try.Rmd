@@ -2,7 +2,16 @@
 title: "Phenology Modelling"
 author: "Nils Tinner"
 date: "`r Sys.Date()`"
-output: html_document
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    number_sections: yes
+    latex_engine: xelatex
+    css: styles.css
+editor_options:
+  markdown:
+    wrap: 75
 ---
 
 This excercise builds upon the model presented in "https://geco-bern.github.io/handfull_of_pixels/phenology_modelling.html". The first task is to think of ways to improve the model. The following are ideas that I came up with.
