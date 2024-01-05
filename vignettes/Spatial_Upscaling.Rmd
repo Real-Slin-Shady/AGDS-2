@@ -67,6 +67,7 @@ applicability (AOA).
 Loading all the packages
 
 ```{R, message = FALSE}
+set.seed(123)
 packages <- c("tidyverse","recipes","ggplot2","sf","rnaturalearth","rnaturalearthdata","caret","ranger","skimr","renv") 
 
 source("../R/load_packages.R")
@@ -335,7 +336,7 @@ print(paste0("RMSE: ",round(mean(out$rmse),2)))
 The results of the spatial cross-validation will be discussed later.
 
 
-# Enviromental Cross Validation
+# Environmental Cross Validation
 
 **Task:: To do so, perform a custom cross-validation as above, but this time
 considering five clusters of points not in geographical space, but in
@@ -343,7 +344,7 @@ environmental space - spanned by the mean annual precipitation and the mean
 annual temperature. Report the R-squared and the RMSE on the validation set
 of each of the five folds.**
 
-## Define the enviromental clusters
+## Define the environmental clusters
 We define the environmental clusters as we did for the spatial, aditionally we scale them. Then the same analysis for the distribution is plotted.
 ```{r}
 
@@ -409,7 +410,7 @@ clustered.
 
 Furthermore we see the nice clusters in the second plot.
 
-## Enviromental cross-validation by hand
+## Environmental cross-validation by hand
 
 ```{r class.source = "fold-show"}
 
@@ -455,7 +456,7 @@ out <- purrr::map2_dfr(
 
 knitr::kable(tibble(out))
 
-print("Mean values enviromental CV:")
+print("Mean values environmental CV:")
 print(paste0("RSQ: ",round(mean(out$rsq),2)))
 print(paste0("RMSE: ",round(mean(out$rmse),2)))
 
@@ -463,7 +464,7 @@ print(paste0("RMSE: ",round(mean(out$rmse),2)))
 
 # Discussion of the results
 
-The best metrics of all model has the random cross validation model. This
+The best metrics of all model has the random cross validation model (mean R-Squared and RSME). This
 is to be expected since data from all sites are in all folds and thus no
 spatial or environmental validation is made. The model performance is
 though not representative for the spatial upscaling task as the spatial upscaling is not performed only within the known covariate space. The RSQ is higher and the
@@ -471,17 +472,17 @@ RMSE is lower in the environmental cross validation than in the spatial cross va
 that the folds are more similar to each other in the environmental cross validation and thus have a higher
 predictive power then when doing a spatial cross validation. This is also
 visible in the different folds. The folds in the spatial upscaling perform
-vastly different to each other while in the enviromental upscaling the
+vastly different to each other while in the environmental upscaling the
 folds are more similar. Additionally by far the lowest predictive power of
 any cluster has a fold in the spatial upscaling further backing this up. Furthermore, this is also visible in the distributions of leaf nitrogen, as the environmental cross validations have a more similar distribution.
 
 All in all the preferred solution should be a spatial or environmental
 cross-validation since it is more sincere about the predictive power of the
 model in novel sites and therefore spatial upscaling. A good solution would
-be to check if the new enviromental covariates that are present in each
+be to check if the new environmental covariates that are present in each
 fold have a similar distances as when performing a spatial upsacling. If
 true, this then further validates the model. If not, new training data
 should be optained or the spatial upsacling should only be performed to the
-areas with known enviromental covariates. This is because models perform
+areas with known environmental covariates. This is because models perform
 poorly when exposed to data outside of the training values. (Ludwig et
 al.2023) This is also done with the area of applicability in the paper.
