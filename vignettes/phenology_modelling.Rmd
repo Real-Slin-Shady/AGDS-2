@@ -25,12 +25,13 @@ The following are ideas that I came up with to improve the model.
 
 This markdown implements adding more data and using an additional parameter.
 
+After the implementation the resuls will be compared to the MODIS dataset phenology data.
 # Setup
 
 First, the same workflow for harvard data download is performed as in the turorial. This is also done for an additional site: Bartel.
 
 ```{r, message = FALSE}
-packages <- c("phenocamr","dplyr","ggplot2","lubridate","daymetr","leaflet","terra","MODISTools","daymetr","renv") 
+packages <- c("phenocamr","dplyr","ggplot2","lubridate","daymetr","leaflet","terra","MODISTools","daymetr","renv","GenSA") 
 
 source("../R/load_packages.R")
 load_packages(packages)#loading packages

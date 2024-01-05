@@ -156,7 +156,7 @@ ggplot() +
     expand = FALSE) +  # to draw map strictly bounded by the specified extent
   
   # plot points on map
-  geom_point(data = dfs, aes(x = lon, y = lat), color = "red", size = 0.4) +
+  geom_point(data = dfs, aes(x = lon, y = lat), color = "darkgreen", size = 0.4) +
   labs(x = "", y = "") +
   theme(legend.position = "bottom")
 
