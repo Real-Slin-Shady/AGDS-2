@@ -9,7 +9,7 @@ Reports that are greaded are spatial upscaling and phenology modelling
 
 
 ## Spatial Upscaling
-- **Description**: Methods for spatial upscaling in environmental data analysis.
+- **Description**: Methods for spatial upscaling performence assessment.
 
 
 

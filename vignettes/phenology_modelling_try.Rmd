@@ -7,14 +7,17 @@ output:
     toc: yes
     toc_float: yes
     number_sections: yes
+    code_folding: "show"
     latex_engine: xelatex
     css: styles.css
 editor_options:
   markdown:
     wrap: 75
 ---
-
-This excercise builds upon the model presented in "https://geco-bern.github.io/handfull_of_pixels/phenology_modelling.html". The first task is to think of ways to improve the model. The following are ideas that I came up with.
+# Introduction
+This excercise builds upon the model presented in "https://geco-bern.github.io/handfull_of_pixels/phenology_modelling.html". The first task is to think of ways to improve the model. 
+The Model is a mechanistic model for phenology beased on growing degree days (GDD)
+The following are ideas that I came up with to improve the model.
 
 1) Add more training data
 2) Add information about plant species
@@ -22,10 +25,12 @@ This excercise builds upon the model presented in "https://geco-bern.github.io/h
 
 This markdown implements adding more data and using an additional parameter.
 
+# Setup
+
 First, the same workflow for harvard data download is performed as in the turorial. This is also done for an additional site: Bartel.
 
-```{r, echo=FALSE}
-packages <- c("phenocamr","dplyr","ggplot2","lubridate","daymetr","leaflet","terra","MODISTools","daymetr") 
+```{r, message = FALSE}
+packages <- c("phenocamr","dplyr","ggplot2","lubridate","daymetr","leaflet","terra","MODISTools","daymetr","renv") 
 
 source("../R/load_packages.R")
 load_packages(packages)#loading packages
@@ -92,7 +97,7 @@ bartel_phenology <- readr::read_csv(
 ```
 Then gdd, tmean and rad are extracted for each date and site. This is the same as in the tutorial just now also with radiation and for both sites. Afterwards we combine both dataframes.
 
-```{r, echo=FALSE}
+```{r}
 #harvard temp and also radiation since used to improve model
 harvard_temp <- harvard_phenocam_data |>
   group_by(year) |>
@@ -136,7 +141,7 @@ all_temp <- rbind(bartel_temp,harvard_temp) #then we combine the dataset
 
 ```
 Now we process the phenology data as in the tutorial but for both sites. Afterwards we combine both dataframes.
-```{r, echo=FALSE}
+```{r}
 #for Harvard
 harvard_phenology <- harvard_phenology |>
   mutate(
@@ -169,7 +174,8 @@ all_pheno <- rbind(bartel_phenology,harvard_phenology) #again we combine
 
 ```
 
-Now, the function is also changed, so that the radiation also has an impact. The radiation is z standardized and then added to the value of gdd. To perform a spatial upscaling later, the two parameters need to be passed as a list. Other than that, the function corresponds to the one used in the exercise.
+# Model Definition
+The function is changed, so that the radiation also has an impact. The radiation is z standardized and then added to the value of gdd. To perform a spatial upscaling later, the two parameters need to be passed as a list. Other than that, the function corresponds to the one used in the exercise.
 
 ```{r}
 gdd_model <- function(data_met, par) {
@@ -233,7 +239,10 @@ rmse_gdd <- function(par, data) {
 }
 ```
 
+# Model Tuning
+
 Now we tune the model. For. this parameters are set as following:
+
 
 ```{r}
 # starting model parameters
@@ -267,9 +276,10 @@ optim_par = GenSA::GenSA(
 
 ```
 
-Now we plot the model performence
+# Model Performence
+Now we plot the model performance
 
-```{r, echo=FALSE}
+```{r class.source = 'fold-hide'}
 #make predictions
 predictions <- all_temp |>
   group_by(year,site) |>
@@ -330,10 +340,10 @@ ggplot(validation) +
 
 
 ```
+# Setup for Upsclaing
+Now, we rast the daymet data for spatial upscaling and later statistical comparison. We also perform a assignment of coordinate system we only look at the first 180 days. For both radiation and mean temperature. But for now just the year 2012.
 
-Now, we rast the daymet data for spatial upscaling and laster statistical comparison. We also perform a assignment of coordinate system we only look at the first 180 days. For both radiation and mean temperature. But for now just the year 2012.
-
-```{r}
+```{r class.source = 'fold-hide', message = FALSE}
 
 
 # Download daily data, this may take a wile, other data is used later
@@ -385,6 +395,7 @@ ma_nh_sol <- terra::subset(
 )
 ```
 
+# Upscaling
 Now we spatially upscale.
 
 ```{r}
@@ -401,7 +412,7 @@ predicted_phenology <- terra::app(
 
 First, a nice overview of the model predictions.
 
-```{r, echo=FALSE}
+```{r class.source = 'fold-hide'}
 
 
 
@@ -437,8 +448,9 @@ leaflet() |>
 
 ```
 
+# Comparison of Our Model to MODIS
 Now we visually compare the modis data to our model. We also need to crop the modis and our data to the same extend.
-```{r, echo=FALSE}
+```{r class.source = 'fold-hide'}
 
 
 
@@ -509,9 +521,9 @@ predicted_phenology <- terra::mask(
 #resulting in these two maps:
 ```
  Interesting. We see almost no visible correlation. Lets check this:
- We perform a correlation for each pixel of the map of the modis data to our predicted data.
+ We perform a correlation for each pixel of the map of the modis data to our predicted data, so a spatial correlation.
   
-```{r, echo=FALSE}
+```{r}
   
   #Now we compare for the year 2012
   predicted_df <- as.vector(predicted_phenology)
@@ -520,7 +532,7 @@ sct_df <- data.frame(
   doy_p = predicted_df,
   doy_m = phenology_df
   )|>
-  tidyr::drop_na()
+  tidyr::drop_na() #Still sometimes contains NA values..
 
 ggplot(
   data = sct_df,
@@ -545,8 +557,13 @@ ggplot(
   annotate("text",x = 110, y = 150, label = paste("RMSE:", round(sqrt(mean((sct_df$doy_p - sct_df$doy_m)^2)), 3)))+
   theme_bw()
 ```
-Not looking very promising, a very waek correlation if at all. Lets generalize this to the years 2008-2012
-```{r, echo=FALSE}
+Not looking very promising, a very weak correlation if at all. 
+
+
+Lets generalize this to the years 2008-2012, maybe there is more of a trend here.
+We perform the same spatial correlation as for the year 2012 just for all the years 2008 to 2012.
+
+```{r class.source = 'fold-hide'}
 sct_df <- data.frame(
   doy_p = NULL,
   doy_m = NULL,
@@ -664,7 +681,7 @@ sct_df <- rbind(sct_df,data.frame(
 
 
 sct_df <- sct_df |>
-  tidyr::drop_na()
+  tidyr::drop_na() #Still sometimes contains NA values..
 
 
 
@@ -695,4 +712,5 @@ ggplot(
 
 
 ```
-Alright, looks much better. Still the RMSE remains very high. I expect that mainly the yearly signal correlates and the spatial still does not.
+Alright, looks much better. Still the RMSE remains very high. Therefore, I expect that mainly the yearly signal correlates and the spatial still does not.
+For further analysis one could look at each year separately.
