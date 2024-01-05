@@ -1,8 +1,8 @@
 # AGDS 2 Project Repository
 
 ## Overview
-This repository contains projects and assignments from the "Applied Geodata Science II" course. 
-Reports that are greaded are spatial upscaling and phenology modelling
+This repository contains assignments from the "Applied Geodata Science II" course. 
+Reports that are graded are spatial upscaling and phenology modelling.
 
 ## Phenology Modeling
 - **Description**: Analysis and modeling of phenological data as well as spatial upscaling.
